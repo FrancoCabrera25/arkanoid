@@ -1,6 +1,6 @@
 # 01 — MVP Jugable de Arkanoid
 
-**Estado:** Approved
+**Estado:** Implementado
 **Depende de:** —
 **Fecha:** 2026-08-29
 
@@ -64,19 +64,19 @@ Cada paso deja el sistema en un estado funcional y verificable.
 
 ## Criterios de aceptación
 
-- [ ] `python3 -m http.server 8000` + abrir `http://localhost:8000` carga el tablero inicial sin pantalla en negro.
-- [ ] La paleta se mueve con teclado (flechas o A/D) y con el mouse.
-- [ ] La pelota rebota correctamente contra paredes y paleta, con ángulo variable según el punto de impacto.
-- [ ] Al golpear un bloque, este desaparece con la animación de explosión (`EXPLOSION_FRAMES`) y se reproduce `break-sound.mp3`.
-- [ ] Cada rebote contra pared o paleta reproduce `ball-bounce.mp3`.
-- [ ] El score aumenta 10 puntos por cada bloque destruido y se muestra en el HUD.
-- [ ] Se muestran las vidas restantes (`Vidas: N`) y se decrementan al caer la pelota, reposicionando pelota y paleta.
-- [ ] Al llegar a 0 vidas se muestra "Game Over" con opción de reiniciar.
-- [ ] Al destruir los 50 bloques se muestra "¡Ganaste!" con opción de reiniciar.
-- [ ] Reiniciar restablece bloques, vidas y score al estado inicial sin resetear el high score.
-- [ ] El high score persiste en `localStorage` tras recargar la página.
-- [ ] La velocidad de la pelota aumenta un 5% cada 10 bloques destruidos.
-- [ ] La tecla `P` pausa y reanuda el bucle sin perder el estado de la partida.
+- [x] `python3 -m http.server 8000` + abrir `http://localhost:8000` carga el tablero inicial sin pantalla en negro.
+- [x] La paleta se mueve con teclado (flechas o A/D) y con el mouse.
+- [x] La pelota rebota correctamente contra paredes y paleta, con ángulo variable según el punto de impacto.
+- [x] Al golpear un bloque, este desaparece con la animación de explosión (`EXPLOSION_FRAMES`) y se reproduce `break-sound.mp3`.
+- [x] Cada rebote contra pared o paleta reproduce `ball-bounce.mp3`.
+- [x] El score aumenta 10 puntos por cada bloque destruido y se muestra en el HUD.
+- [x] Se muestran las vidas restantes (`Vidas: N`) y se decrementan al caer la pelota, reposicionando pelota y paleta.
+- [x] Al llegar a 0 vidas se muestra "Game Over" con opción de reiniciar.
+- [x] Al destruir los 50 bloques se muestra "¡Ganaste!" con opción de reiniciar.
+- [x] Reiniciar restablece bloques, vidas y score al estado inicial sin resetear el high score.
+- [x] El high score persiste en `localStorage` tras recargar la página.
+- [x] La velocidad de la pelota aumenta un 5% cada 10 bloques destruidos.
+- [x] La tecla `P` pausa y reanuda el bucle sin perder el estado de la partida.
 
 ## Decisiones tomadas y descartadas
 
