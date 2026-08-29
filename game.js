@@ -184,6 +184,18 @@ function drawEndOverlay() {
   ctx.fillText( 'Reiniciar (Enter)', CANVAS_WIDTH / 2, button.y + button.height / 2 );
 }
 
+function drawLivesIndicator() {
+  const size = BALL_RADIUS * 2;
+  const gap = 6;
+  const totalWidth = gameState.lives * size + ( gameState.lives - 1 ) * gap;
+  let x = CANVAS_WIDTH / 2 - totalWidth / 2;
+
+  for ( let i = 0; i < gameState.lives; i++ ) {
+    drawSprite( ctx, 'ball', x, 8, size, size );
+    x += size + gap;
+  }
+}
+
 function drawHud() {
   ctx.font = '16px sans-serif';
   ctx.fillStyle = '#fff';
@@ -192,8 +204,7 @@ function drawHud() {
   ctx.textAlign = 'left';
   ctx.fillText( `Score: ${ gameState.score }`, 10, 10 );
 
-  ctx.textAlign = 'center';
-  ctx.fillText( `Vidas: ${ gameState.lives }`, CANVAS_WIDTH / 2, 10 );
+  drawLivesIndicator();
 
   ctx.textAlign = 'right';
   ctx.fillText( `High Score: ${ highScore }`, CANVAS_WIDTH - 10, 10 );
