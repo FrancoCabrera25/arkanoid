@@ -1,8 +1,65 @@
 const canvas = document.getElementById( 'game' );
 const ctx = canvas.getContext( '2d' );
 
-const CANVAS_WIDTH = canvas.width;
-const CANVAS_HEIGHT = canvas.height;
+let paddle;
+let ball;
+let blocks;
+let explosions;
+let gameState;
+
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+const ASPECT_RATIO = CANVAS_HEIGHT / CANVAS_WIDTH;
+const MIN_DISPLAY_WIDTH = 320;
+const MAX_DISPLAY_WIDTH = 800;
+
+let DISPLAY_WIDTH = CANVAS_WIDTH;
+let DISPLAY_HEIGHT = CANVAS_HEIGHT;
+let SCALE = 1;
+
+function resizeCanvas() {
+  const availableWidth = window.innerWidth;
+  const availableHeight = window.innerHeight;
+  let width = Math.min( availableWidth, availableHeight / ASPECT_RATIO );
+  width = Math.max( MIN_DISPLAY_WIDTH, Math.min( MAX_DISPLAY_WIDTH, width ) );
+
+  DISPLAY_WIDTH = Math.round( width );
+  DISPLAY_HEIGHT = Math.round( DISPLAY_WIDTH * ASPECT_RATIO );
+  canvas.width = DISPLAY_WIDTH;
+  canvas.height = DISPLAY_HEIGHT;
+  SCALE = DISPLAY_WIDTH / CANVAS_WIDTH;
+}
+
+const isTouchDevice = ( 'ontouchstart' in window ) || navigator.maxTouchPoints > 0;
+const rotatePromptEl = document.getElementById( 'rotate-prompt' );
+let pausedByRotatePrompt = false;
+
+function updateRotatePrompt() {
+  const isPortrait = window.innerHeight > window.innerWidth;
+  const shouldShow = isTouchDevice && isPortrait;
+
+  canvas.hidden = shouldShow;
+  rotatePromptEl.hidden = !shouldShow;
+
+  if ( !gameState ) return;
+
+  if ( shouldShow && !gameState.isPaused ) {
+    gameState.isPaused = true;
+    pausedByRotatePrompt = true;
+  } else if ( !shouldShow && pausedByRotatePrompt ) {
+    gameState.isPaused = false;
+    pausedByRotatePrompt = false;
+  }
+}
+
+function handleViewportChange() {
+  resizeCanvas();
+  updateRotatePrompt();
+}
+
+window.addEventListener( 'resize', handleViewportChange );
+window.addEventListener( 'orientationchange', handleViewportChange );
+handleViewportChange();
 
 const BLOCK_ROWS = 5;
 const BLOCK_COLS = 10;
@@ -26,12 +83,8 @@ const SPEED_UP_EVERY_BLOCKS = 10;
 const SPEED_UP_FACTOR = 1.05;
 
 const RESTART_BUTTON = { width: 200, height: 44 };
+const PAUSE_BUTTON = { width: 40, height: 40, margin: 10 };
 
-let paddle;
-let ball;
-let blocks;
-let explosions;
-let gameState;
 let highScore = Number( localStorage.getItem( HIGH_SCORE_KEY ) ) || 0;
 
 const ballBounceSound = new Audio( 'assets/sounds/ball-bounce.mp3' );
@@ -128,7 +181,17 @@ function getRestartButtonRect() {
   };
 }
 
+function getPauseButtonRect() {
+  return {
+    x: CANVAS_WIDTH - PAUSE_BUTTON.width - PAUSE_BUTTON.margin,
+    y: CANVAS_HEIGHT - PAUSE_BUTTON.height - PAUSE_BUTTON.margin,
+    width: PAUSE_BUTTON.width,
+    height: PAUSE_BUTTON.height,
+  };
+}
+
 function draw() {
+  ctx.setTransform( SCALE, 0, 0, SCALE, 0, 0 );
   ctx.clearRect( 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT );
 
   blocks.forEach( block => {
@@ -152,6 +215,34 @@ function draw() {
     drawEndOverlay();
   } else if ( gameState.isPaused ) {
     drawPauseOverlay();
+    drawPauseButton();
+  } else {
+    drawPauseButton();
+  }
+}
+
+function drawPauseButton() {
+  const btn = getPauseButtonRect();
+  const cx = btn.x + btn.width / 2;
+  const cy = btn.y + btn.height / 2;
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.fillRect( btn.x, btn.y, btn.width, btn.height );
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.strokeRect( btn.x, btn.y, btn.width, btn.height );
+
+  ctx.fillStyle = '#fff';
+  if ( gameState.isPaused ) {
+    ctx.beginPath();
+    ctx.moveTo( cx - 6, cy - 9 );
+    ctx.lineTo( cx - 6, cy + 9 );
+    ctx.lineTo( cx + 9, cy );
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillRect( cx - 8, cy - 9, 5, 18 );
+    ctx.fillRect( cx + 3, cy - 9, 5, 18 );
   }
 }
 
@@ -232,14 +323,25 @@ function isPointInRect( x, y, rect ) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
-function handleCanvasClick( e ) {
-  if ( !gameState.isGameOver && !gameState.isWin ) return;
+function handleTap( clientX, clientY ) {
   const rect = canvas.getBoundingClientRect();
-  const clickX = ( e.clientX - rect.left ) * ( CANVAS_WIDTH / rect.width );
-  const clickY = ( e.clientY - rect.top ) * ( CANVAS_HEIGHT / rect.height );
-  if ( isPointInRect( clickX, clickY, getRestartButtonRect() ) ) {
-    initGame();
+  const x = ( clientX - rect.left ) * ( CANVAS_WIDTH / rect.width );
+  const y = ( clientY - rect.top ) * ( CANVAS_HEIGHT / rect.height );
+
+  if ( gameState.isGameOver || gameState.isWin ) {
+    if ( isPointInRect( x, y, getRestartButtonRect() ) ) {
+      initGame();
+    }
+    return;
   }
+
+  if ( isPointInRect( x, y, getPauseButtonRect() ) ) {
+    gameState.isPaused = !gameState.isPaused;
+  }
+}
+
+function handleCanvasClick( e ) {
+  handleTap( e.clientX, e.clientY );
 }
 
 function handleKeyUp( e ) {
@@ -254,9 +356,36 @@ function handleMouseMove( e ) {
   paddle.x = clampPaddleX( mouseX - paddle.width / 2 );
 }
 
+function movePaddleToTouch( touch ) {
+  const rect = canvas.getBoundingClientRect();
+  const touchX = ( touch.clientX - rect.left ) * ( CANVAS_WIDTH / rect.width );
+  paddle.x = clampPaddleX( touchX - paddle.width / 2 );
+}
+
+function handleTouchStart( e ) {
+  e.preventDefault();
+  hasUserInteracted = true;
+  if ( e.touches[ 0 ] ) movePaddleToTouch( e.touches[ 0 ] );
+}
+
+function handleTouchMove( e ) {
+  e.preventDefault();
+  hasUserInteracted = true;
+  if ( e.touches[ 0 ] ) movePaddleToTouch( e.touches[ 0 ] );
+}
+
+function handleTouchEnd( e ) {
+  e.preventDefault();
+  const touch = e.changedTouches[ 0 ];
+  if ( touch ) handleTap( touch.clientX, touch.clientY );
+}
+
 document.addEventListener( 'keydown', handleKeyDown );
 document.addEventListener( 'keyup', handleKeyUp );
 canvas.addEventListener( 'mousemove', handleMouseMove );
+canvas.addEventListener( 'touchstart', handleTouchStart, { passive: false } );
+canvas.addEventListener( 'touchmove', handleTouchMove, { passive: false } );
+canvas.addEventListener( 'touchend', handleTouchEnd, { passive: false } );
 canvas.addEventListener( 'click', handleCanvasClick );
 
 function update() {
@@ -378,5 +507,6 @@ function loop() {
 
 loadSpritesheet( () => {
   initGame();
+  updateRotatePrompt();
   requestAnimationFrame( loop );
 } );
