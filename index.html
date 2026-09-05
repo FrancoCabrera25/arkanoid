@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Arkanoid</title>
   <style>
     html, body {
@@ -12,15 +13,35 @@
       justify-content: center;
       align-items: center;
       height: 100%;
+      overflow: hidden;
     }
     canvas {
       background: #000;
       display: block;
+      touch-action: none;
+    }
+    canvas[hidden] {
+      display: none;
+    }
+    #rotate-prompt {
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 0 32px;
+    }
+    #rotate-prompt .icon {
+      font-size: 48px;
+      display: block;
+      margin-bottom: 16px;
     }
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="600"></canvas>
+  <canvas id="game"></canvas>
+  <div id="rotate-prompt" hidden>
+    <span class="icon">↻</span>
+    Rotá tu dispositivo para jugar
+  </div>
 
   <script src="assets/spritesheet.js"></script>
   <script src="game.js"></script>
