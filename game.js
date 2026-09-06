@@ -6,6 +6,8 @@ let ball;
 let blocks;
 let explosions;
 let gameState;
+let isLevelTransition;
+let levelTransitionStartTime;
 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
@@ -61,24 +63,33 @@ window.addEventListener( 'resize', handleViewportChange );
 window.addEventListener( 'orientationchange', handleViewportChange );
 handleViewportChange();
 
-const BLOCK_ROWS = 5;
 const BLOCK_COLS = 10;
 const BLOCK_WIDTH = 74;
 const BLOCK_HEIGHT = 37;
 const BLOCK_PADDING = 4;
 const BLOCK_OFFSET_TOP = 40;
 const BLOCK_OFFSET_LEFT = ( CANVAS_WIDTH - ( BLOCK_COLS * BLOCK_WIDTH + ( BLOCK_COLS - 1 ) * BLOCK_PADDING ) ) / 2;
-const BLOCK_ROW_COLORS = [ 'red', 'cyan', 'green', 'magenta', 'yellow' ];
+const NORMAL_BLOCK_COLORS = [ 'red', 'cyan', 'green', 'magenta', 'yellow', 'hotpink' ];
+
+const TOTAL_LEVELS = 10;
+const BLOCK_ROWS_MIN = 4;
+const BLOCK_ROWS_MAX = 9;
+const HARD_BLOCK_START_LEVEL = 3;
+const HARD_BLOCK_RATIO_STEP = 0.1;
+const HARD_BLOCK_RATIO_MAX = 0.4;
+const LEVEL_TRANSITION_DURATION = 2000;
 
 const PADDLE_WIDTH = 162;
 const PADDLE_HEIGHT = 14;
 
 const BALL_RADIUS = 8;
 const BALL_MAX_BOUNCE_ANGLE = ( 75 * Math.PI ) / 180;
+const BALL_BASE_SPEED = 5;
 
 const POINTS_PER_BLOCK = 10;
 const INITIAL_LIVES = 3;
 const HIGH_SCORE_KEY = 'arkanoid_highscore';
+const MAX_LEVEL_KEY = 'arkanoid_max_level';
 const SPEED_UP_EVERY_BLOCKS = 10;
 const SPEED_UP_FACTOR = 1.05;
 
@@ -97,16 +108,42 @@ function playSound( audio ) {
   audio.play().catch( () => {} );
 }
 
-function createBlocks() {
+function generateLevelConfig( level ) {
+  const rows = BLOCK_ROWS_MIN + Math.round( ( level - 1 ) / ( TOTAL_LEVELS - 1 ) * ( BLOCK_ROWS_MAX - BLOCK_ROWS_MIN ) );
+  const hardBlockRatio = level < HARD_BLOCK_START_LEVEL
+    ? 0
+    : Math.min( HARD_BLOCK_RATIO_MAX, Math.floor( ( level - 1 ) / 2 ) * HARD_BLOCK_RATIO_STEP );
+  const speedMultiplier = 1 + 0.1 * ( level - 1 );
+  return { rows, hardBlockRatio, speedMultiplier };
+}
+
+function gapModulus( level ) {
+  return Math.max( 3, 7 - Math.floor( ( level - 1 ) / 2 ) );
+}
+
+function isGapCell( row, col, level ) {
+  return ( row + col * 2 + level ) % gapModulus( level ) === 0;
+}
+
+function isHardCell( row, col, level, hardBlockRatio ) {
+  if ( hardBlockRatio <= 0 ) return false;
+  const hash = ( row * 6 + col + level * 3 ) % 10;
+  return hash < Math.round( hardBlockRatio * 10 );
+}
+
+function createBlocks( level ) {
+  const { rows, hardBlockRatio } = generateLevelConfig( level );
   const result = [];
-  for ( let row = 0; row < BLOCK_ROWS; row++ ) {
+  for ( let row = 0; row < rows; row++ ) {
     for ( let col = 0; col < BLOCK_COLS; col++ ) {
+      if ( isGapCell( row, col, level ) ) continue;
+      const isHard = isHardCell( row, col, level, hardBlockRatio );
       result.push( {
         x: BLOCK_OFFSET_LEFT + col * ( BLOCK_WIDTH + BLOCK_PADDING ),
         y: BLOCK_OFFSET_TOP + row * ( BLOCK_HEIGHT + BLOCK_PADDING ),
         width: BLOCK_WIDTH,
         height: BLOCK_HEIGHT,
-        color: BLOCK_ROW_COLORS[ row ],
+        color: isHard ? 'gray' : NORMAL_BLOCK_COLORS[ row % NORMAL_BLOCK_COLORS.length ],
         alive: true,
       } );
     }
@@ -124,7 +161,22 @@ function resetPositions() {
   ball.dy = -4;
 }
 
-function initGame() {
+function applyLevelSpeed( level ) {
+  const { speedMultiplier } = generateLevelConfig( level );
+  ball.speed = BALL_BASE_SPEED * speedMultiplier;
+  const magnitude = Math.sqrt( ball.dx * ball.dx + ball.dy * ball.dy );
+  if ( magnitude > 0 ) {
+    const scale = ball.speed / magnitude;
+    ball.dx *= scale;
+    ball.dy *= scale;
+  }
+}
+
+function getStoredMaxLevel() {
+  return Number( localStorage.getItem( MAX_LEVEL_KEY ) ) || 1;
+}
+
+function initGame( level ) {
   paddle = {
     x: 0,
     y: 0,
@@ -139,21 +191,42 @@ function initGame() {
     radius: BALL_RADIUS,
     dx: 0,
     dy: 0,
-    speed: 5,
+    speed: BALL_BASE_SPEED,
   };
 
   resetPositions();
 
-  blocks = createBlocks();
+  applyLevelSpeed( level );
+  blocks = createBlocks( level );
   explosions = [];
+  isLevelTransition = false;
+  levelTransitionStartTime = 0;
   gameState = {
     score: 0,
     lives: INITIAL_LIVES,
     isPaused: false,
     isGameOver: false,
     isWin: false,
-    blocksDestroyed: 0,
+    blocksDestroyedInLevel: 0,
+    level,
   };
+}
+
+function persistMaxLevel( level ) {
+  const storedMaxLevel = Number( localStorage.getItem( MAX_LEVEL_KEY ) ) || 0;
+  if ( level > storedMaxLevel ) {
+    localStorage.setItem( MAX_LEVEL_KEY, String( level ) );
+  }
+}
+
+function advanceToNextLevel() {
+  gameState.level += 1;
+  gameState.blocksDestroyedInLevel = 0;
+  blocks = createBlocks( gameState.level );
+  resetPositions();
+  applyLevelSpeed( gameState.level );
+  isLevelTransition = false;
+  persistMaxLevel( gameState.level );
 }
 
 function finalizeHighScore() {
@@ -213,12 +286,25 @@ function draw() {
 
   if ( gameState.isGameOver || gameState.isWin ) {
     drawEndOverlay();
+  } else if ( isLevelTransition ) {
+    drawLevelTransitionOverlay();
   } else if ( gameState.isPaused ) {
     drawPauseOverlay();
     drawPauseButton();
   } else {
     drawPauseButton();
   }
+}
+
+function drawLevelTransitionOverlay() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect( 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT );
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillText( `Nivel ${ gameState.level } completado`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 );
 }
 
 function drawPauseButton() {
@@ -265,7 +351,7 @@ function drawEndOverlay() {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 40px sans-serif';
-  ctx.fillText( gameState.isWin ? '¡Ganaste!' : 'Game Over', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30 );
+  ctx.fillText( gameState.isWin ? '¡Ganaste el juego!' : 'Game Over', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30 );
 
   const button = getRestartButtonRect();
   ctx.fillStyle = '#2a7';
@@ -293,7 +379,10 @@ function drawHud() {
   ctx.textBaseline = 'top';
 
   ctx.textAlign = 'left';
-  ctx.fillText( `Score: ${ gameState.score }`, 10, 10 );
+  const scoreText = `Score: ${ gameState.score }`;
+  ctx.fillText( scoreText, 10, 10 );
+  const scoreWidth = ctx.measureText( scoreText ).width;
+  ctx.fillText( `Nivel ${ gameState.level } / ${ TOTAL_LEVELS }`, 10 + scoreWidth + 20, 10 );
 
   drawLivesIndicator();
 
@@ -312,9 +401,9 @@ function handleKeyDown( e ) {
   if ( e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' ) keys.left = true;
   if ( e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' ) keys.right = true;
   if ( ( gameState.isGameOver || gameState.isWin ) && e.key === 'Enter' ) {
-    initGame();
+    initGame( 1 );
   }
-  if ( ( e.key === 'p' || e.key === 'P' ) && !gameState.isGameOver && !gameState.isWin ) {
+  if ( ( e.key === 'p' || e.key === 'P' ) && !gameState.isGameOver && !gameState.isWin && !isLevelTransition ) {
     gameState.isPaused = !gameState.isPaused;
   }
 }
@@ -330,12 +419,12 @@ function handleTap( clientX, clientY ) {
 
   if ( gameState.isGameOver || gameState.isWin ) {
     if ( isPointInRect( x, y, getRestartButtonRect() ) ) {
-      initGame();
+      initGame( 1 );
     }
     return;
   }
 
-  if ( isPointInRect( x, y, getPauseButtonRect() ) ) {
+  if ( !isLevelTransition && isPointInRect( x, y, getPauseButtonRect() ) ) {
     gameState.isPaused = !gameState.isPaused;
   }
 }
@@ -390,6 +479,12 @@ canvas.addEventListener( 'click', handleCanvasClick );
 
 function update() {
   if ( gameState.isGameOver || gameState.isWin || gameState.isPaused ) return;
+  if ( isLevelTransition ) {
+    if ( performance.now() - levelTransitionStartTime >= LEVEL_TRANSITION_DURATION ) {
+      advanceToNextLevel();
+    }
+    return;
+  }
   if ( keys.left ) paddle.x = clampPaddleX( paddle.x - paddle.speed );
   if ( keys.right ) paddle.x = clampPaddleX( paddle.x + paddle.speed );
   updateBall();
@@ -409,25 +504,35 @@ function checkBlockCollisions() {
     if ( !block.alive ) continue;
     if ( !ballIntersectsRect( block ) ) continue;
 
-    block.alive = false;
     gameState.score += POINTS_PER_BLOCK;
-    gameState.blocksDestroyed += 1;
-    if ( gameState.blocksDestroyed % SPEED_UP_EVERY_BLOCKS === 0 ) {
-      increaseBallSpeed();
+
+    if ( block.color === 'gray' ) {
+      block.color = 'red';
+    } else {
+      block.alive = false;
+      gameState.blocksDestroyedInLevel += 1;
+      if ( gameState.blocksDestroyedInLevel % SPEED_UP_EVERY_BLOCKS === 0 ) {
+        increaseBallSpeed();
+      }
+      if ( blocks.every( b => !b.alive ) ) {
+        if ( gameState.level < TOTAL_LEVELS ) {
+          isLevelTransition = true;
+          levelTransitionStartTime = performance.now();
+        } else {
+          gameState.isWin = true;
+          finalizeHighScore();
+        }
+      }
+      explosions.push( {
+        x: block.x,
+        y: block.y,
+        width: block.width,
+        height: block.height,
+        color: block.color,
+        startTime: performance.now(),
+      } );
+      playSound( breakSound );
     }
-    if ( blocks.every( b => !b.alive ) ) {
-      gameState.isWin = true;
-      finalizeHighScore();
-    }
-    explosions.push( {
-      x: block.x,
-      y: block.y,
-      width: block.width,
-      height: block.height,
-      color: block.color,
-      startTime: performance.now(),
-    } );
-    playSound( breakSound );
 
     const blockCenterX = block.x + block.width / 2;
     const blockCenterY = block.y + block.height / 2;
@@ -506,7 +611,7 @@ function loop() {
 }
 
 loadSpritesheet( () => {
-  initGame();
+  initGame( getStoredMaxLevel() );
   updateRotatePrompt();
   requestAnimationFrame( loop );
 } );
